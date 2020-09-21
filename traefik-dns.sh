@@ -105,10 +105,10 @@ kubectl --context ${CONTEXT} --namespace ${NAMESPACE} get pods --selector ${LABE
     while read EVENT; do
         event_type=$(echo ${EVENT} | jq --raw-output '.type')
 
-        resource_name=$(echo ${EVENT} | jq --raw-output '.object.metadata.name')
-        resource_phase=$(echo ${EVENT} | jq --raw-output '.object.status.phase')
-        if test "${resource_phase}" == "Running" && test "$(echo ${EVENT} | jq --raw-output '.object.status.containerStatuses[].state | to_entries[].key' | uniq | wc -l)" -eq 1; then
-            resource_state=$(echo ${EVENT} | jq --raw-output '.object.status.containerStatuses[].state | to_entries[].key' | uniq)
+        resource_name=$(echo ${EVENT} | k8s_event_get_type)
+        resource_phase=$(echo ${EVENT} | k8s_event_get_object_name)
+        if test "${resource_phase}" == "Running" && test "$(echo ${EVENT} | k8s_event_get_pod_states | wc -l)" -eq 1; then
+            resource_state=$(echo ${EVENT} | k8s_event_get_pod_states)
         fi
 
         echo "Debug: Got event with type=${event_type}, resource_name=${resource_name}, resource_state=${resource_state}."
@@ -128,6 +128,7 @@ kubectl --context ${CONTEXT} --namespace ${NAMESPACE} get pods --selector ${LABE
                     candidate_pod_name=${resource_name}
                     candidate_pod_state=${resource_state}
                     echo "DEBUG: Following candidate pod ${candidate_pod_name} (${candidate_pod_state})."
+                    followed_pod_updated "${CONTEXT}" "${NAMESPACE}" "${LABEL_SELECTOR}" "${current_pod_name}"
 
                 elif test "${resource_name}" == "${candidate_pod_name}"; then
                     candidate_pod_state=${resource_state}
@@ -151,6 +152,7 @@ kubectl --context ${CONTEXT} --namespace ${NAMESPACE} get pods --selector ${LABE
                         current_pod_name=${candidate_pod_name}
                         current_pod_state=${candidate_pod_state}
                         echo "DEBUG: Switching to candidate pod ${candidate_pod_name} (${candidate_pod_state})."
+                        followed_pod_updated "${CONTEXT}" "${NAMESPACE}" "${LABEL_SELECTOR}" "${current_pod_name}"
 
                     else
                         echo "DEBUG: No candidate evailable. Unable to switch."
