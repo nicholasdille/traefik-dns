@@ -1,0 +1,8 @@
+.git
+.github
+.dockerignore
+.env
+.gitignore
+Dockerfile
+README.md
+traefik-dns.yaml

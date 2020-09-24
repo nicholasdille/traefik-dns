@@ -7,5 +7,5 @@ RUN echo "@testing http://nl.alpinelinux.org/alpine/edge/testing" >>/etc/apk/rep
         jq \
         kubectl@testing
 
-COPY traefik-dns.sh /
+COPY . /opt/traefik-dns/
 ENTRYPOINT [ "bash", "/traefik-dns.sh" ]
