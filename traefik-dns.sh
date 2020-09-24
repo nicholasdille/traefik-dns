@@ -87,9 +87,14 @@ if ! kubectl get crd dnsendpoints.externaldns.k8s.io >/dev/null 2>&1; then
     echo "ERROR: I need external-dns running in the cluster."
     exit 1
 fi
-
-# TODO: Test for specified DNSEndpoint
-# TODO: Check if DNSEndpoint managed an A record
+if ! kubectl --context ${CONTEXT} --namespace ${NAMESPACE} get DNSEndpoint ${DNSENDPOINT_NAME} >/dev/null 2>&1; then
+    echo "ERROR: Specified DNSEndpoint <${DNSENDPOINT_NAME}> does not exist."
+    exit 1
+fi
+if test "$(kubectl --context ${CONTEXT} --namespace ${NAMESPACE} get DNSEndpoint ${DNSENDPOINT_NAME} -o json | jq -r '.spec.endpoints[].recordType')" != "A"; then
+    echo "ERROR: Specified DNSEndpoint <${DNSENDPOINT_NAME}> does not manage an A record."
+    exit 1
+fi
 
 function cleanup() {
     echo "INFO: Cleaning up..."
@@ -133,6 +138,9 @@ kubectl --context ${CONTEXT} --namespace ${NAMESPACE} get pods --selector ${LABE
                 elif test "${resource_name}" == "${candidate_pod_name}"; then
                     candidate_pod_state=${resource_state}
                     echo "DEBUG: New state for candidate pod ${candidate_pod_name} (${candidate_pod_state})."
+                
+                else
+                    echo "ERROR: Ignoring unhandled event."
                 fi
             ;;
             MODIFIED)
@@ -143,6 +151,9 @@ kubectl --context ${CONTEXT} --namespace ${NAMESPACE} get pods --selector ${LABE
                 elif test "${resource_name}" == "${candidate_pod_name}"; then
                     candidate_pod_state=${resource_state}
                     echo "DEBUG: New state for candidate pod ${candidate_pod_name} (${candidate_pod_state})."
+                
+                else
+                    echo "ERROR: Ignoring unhandled event."
                 fi
             ;;
             DELETED)

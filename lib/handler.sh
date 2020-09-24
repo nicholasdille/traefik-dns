@@ -4,5 +4,5 @@ function followed_pod_updated() {
     local selector=$3
     local name=$4
 
-    #
+    kubectl --context="${context}" --namespace="${namespace}" get pod ${name}
 }
