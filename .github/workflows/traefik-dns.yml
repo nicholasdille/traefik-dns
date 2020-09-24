@@ -1,0 +1,29 @@
+name: docker-build
+
+on:
+  push:
+    branches:
+    - master
+  schedule:
+  - cron:  '0 7 * * *'
+
+jobs:
+  build:
+    name: docker-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+
+    - name: Checkout
+      uses: actions/checkout@v2
+    
+    - name: Build and push image
+      env:
+        DOCKER_BUILDKIT: 1
+      uses: docker/build-push-action@v1
+      with:
+        username: ${{ secrets.DOCKER_HUB_USERNAME }}
+        password: ${{ secrets.DOCKER_HUB_PASSWORD }}
+        repository: nicholasdille/traefik-dns
+        tags: latest
+        tag_with_ref: true
