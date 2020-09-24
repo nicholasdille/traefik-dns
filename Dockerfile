@@ -1,10 +1,11 @@
 FROM alpine
 
-RUN apk add --update-cache --no-cache \
+RUN echo "@testing http://nl.alpinelinux.org/alpine/edge/testing" >>/etc/apk/repositories \
+ && apk add --update-cache --no-cache \
         bash \
         curl \
         jq \
-        kubectl
+        kubectl@testing
 
 COPY traefik-dns.sh /
 ENTRYPOINT [ "bash", "/traefik-dns.sh" ]
