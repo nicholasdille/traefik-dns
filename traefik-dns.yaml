@@ -52,7 +52,7 @@ spec:
     spec:
       containers:
       - name: traefik-dns
-        image: nicholasdille/traefik-dns
+        image: nicholasdille/traefik-dns:master
         args:
         - --namespace=traefik
         - --selector=service=app
