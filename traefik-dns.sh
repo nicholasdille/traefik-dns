@@ -13,22 +13,16 @@ if test "$0" == "-bash"; then
 fi
 
 BASE_DIR=$(dirname $(readlink -f "$0"))
-
-for file in "${BASE_DIR}/lib/*"; do
+for file in ${BASE_DIR}/lib/*.sh; do
     source "${file}"
 done
 
+LOG_LEVEL=info
 while test "$#" -gt 0; do
     argument=$1
     shift
 
     case "${argument}" in
-        --context|-c)
-            CONTEXT=$1
-        ;;
-        --namespace|-n)
-            NAMESPACE=$1
-        ;;
         --selector|-l)
             LABEL_SELECTOR=$1
         ;;
@@ -36,9 +30,7 @@ while test "$#" -gt 0; do
             DNSENDPOINT_NAME=$1
         ;;
         --loglevel)
-            LOGLEVEL=$1
-            # TODO: Implement log levels
-            echo "INFO: Argument loglevel is not implemented yet. Will default to debug for now."
+            LOG_LEVEL=$1
         ;;
         --help)
             help
@@ -48,65 +40,64 @@ while test "$#" -gt 0; do
 
     shift
 done
+info "Log level is <${LOG_LEVEL^^}>."
+LOG_LEVEL_ID=$(get_log_level_id ${LOG_LEVEL})
 
-if test -f .env; then
-    source .env
-fi
-
-if test -z "${KUBECONFIG}" && ! test -f "${HOME}/.kube/config" && ! test -d /run/secrets/kubernetes.io/serviceaccount/; then
-    echo "ERROR: You must provide a connection to a Kubernetes cluster in either of the following ways:"
-    echo "       1. The file ${HOME}/.kube/config must exist"
-    echo "       2. The environment variable KUBECONFIG is set"
-    echo "       3. The parameter --kubeconfig is specified"
-    echo "       4. The directory /run/secrets/kubernetes.io/serviceaccount is populated"
+if ! test -d /run/secrets/kubernetes.io/serviceaccount; then
+    error "Missing service account information in /run/secrets/kubernetes.io/serviceaccount."
     exit 1
 fi
-if test -z "${NAMESPACE}"; then
-    echo "ERROR: You must specify a namespace."
+if test -z "${LABEL_SELECTOR}"; then
+    error "You must specify a label selector."
     exit 1
 fi
-if test -n "${LABEL_SELECTOR}"; then
-    echo "ERROR: You must specify a label selector."
-    exit 1
-fi
-if test -n "${DNSENDPOINT_NAME}"; then
-    echo "ERROR: You must specify a DNSEndpoint name."
+if test -z "${DNSENDPOINT_NAME}"; then
+    error "You must specify a DNSEndpoint name."
     exit 1
 fi
 
 for tool in kubectl curl jq; do
     if ! type ${tool} >/dev/null 2>&1; then
-        echo "ERROR: I need ${tool} to work."
+        error "I need ${tool} to work."
         exit 1
     fi
 done
 
-# TODO: Create kubeconfig
+kubectl config set-cluster local --server=https://kubernetes --certificate-authority=/run/secrets/kubernetes.io/serviceaccount/ca.crt
+kubectl config set-credentials local --token=$(cat /run/secrets/kubernetes.io/serviceaccount/token)
+kubectl config set-context local --cluster=local --user=local --namespace=$(cat /run/secrets/kubernetes.io/serviceaccount/namespace)
 
-if ! kubectl get crd dnsendpoints.externaldns.k8s.io >/dev/null 2>&1; then
-    echo "ERROR: I need external-dns running in the cluster."
+if ! kubectl get pods >/dev/null 2>&1; then
+    error "Failed to establish cluster connection."
     exit 1
 fi
-if ! kubectl --context ${CONTEXT} --namespace ${NAMESPACE} get DNSEndpoint ${DNSENDPOINT_NAME} >/dev/null 2>&1; then
-    echo "ERROR: Specified DNSEndpoint <${DNSENDPOINT_NAME}> does not exist."
+
+if ! kubectl get dnsendpoints >/dev/null 2>&1; then
+    error "I need external-dns running in the cluster."
     exit 1
 fi
-if test "$(kubectl --context ${CONTEXT} --namespace ${NAMESPACE} get DNSEndpoint ${DNSENDPOINT_NAME} -o json | jq -r '.spec.endpoints[].recordType')" != "A"; then
-    echo "ERROR: Specified DNSEndpoint <${DNSENDPOINT_NAME}> does not manage an A record."
+if ! kubectl get DNSEndpoint ${DNSENDPOINT_NAME} >/dev/null 2>&1; then
+    error "Specified DNSEndpoint <${DNSENDPOINT_NAME}> does not exist."
+    exit 1
+fi
+if test "$(kubectl get DNSEndpoint ${DNSENDPOINT_NAME} -o json | jq -r '.spec.endpoints[].recordType')" != "A"; then
+    error "Specified DNSEndpoint <${DNSENDPOINT_NAME}> does not manage an A record."
     exit 1
 fi
 
 function cleanup() {
-    echo "INFO: Cleaning up..."
-    echo "INFO: Goodbye!"
+    info "Cleaning up..."
+    info "Goodbye!"
 }
 trap cleanup EXIT
 
+event_index=0
 current_pod_name=""
 current_pod_state=""
 candidate_pod_name=""
 candidate_pod_state=""
-kubectl --context ${CONTEXT} --namespace ${NAMESPACE} get pods --selector ${LABEL_SELECTOR} --watch --output-watch-events --output json | \
+kubectl get pods --selector ${LABEL_SELECTOR} --watch --output-watch-events --output json | \
+    jq --compact-output --monochrome-output --unbuffered 'del(.object.metadata.managedFields)' | \
     while read EVENT; do
         event_type=$(echo ${EVENT} | jq --raw-output '.type')
 
@@ -116,61 +107,63 @@ kubectl --context ${CONTEXT} --namespace ${NAMESPACE} get pods --selector ${LABE
             resource_state=$(echo ${EVENT} | k8s_event_get_pod_states)
         fi
 
-        echo "Debug: Got event with type=${event_type}, resource_name=${resource_name}, resource_state=${resource_state}."
+        debug "Got event ${event_index} with type=${event_type}, resource_name=${resource_name}, resource_state=${resource_state}."
 
         case "${event_type}" in
             ADDED)
                 if test -z "${current_pod_name}"; then
                     current_pod_name=${resource_name}
                     current_pod_state=${resource_state}
-                    echo "DEBUG: Following pod ${current_pod_name} (${current_pod_state})."
+                    info "Following pod ${current_pod_name} (${current_pod_state})."
+                    followed_pod_updated "${LABEL_SELECTOR}" "${current_pod_name}"
 
                 elif test "${resource_name}" == "${current_pod_name}"; then
                     current_pod_state=${resource_state}
-                    echo "DEBUG: New state for current pod ${current_pod_name} (${current_pod_state})."
+                    debug "New state for current pod ${current_pod_name} (${current_pod_state})."
 
                 elif test -z "${candidate_pod_name}"; then
                     candidate_pod_name=${resource_name}
                     candidate_pod_state=${resource_state}
-                    echo "DEBUG: Following candidate pod ${candidate_pod_name} (${candidate_pod_state})."
-                    followed_pod_updated "${CONTEXT}" "${NAMESPACE}" "${LABEL_SELECTOR}" "${current_pod_name}"
+                    info "Following candidate pod ${candidate_pod_name} (${candidate_pod_state})."
 
                 elif test "${resource_name}" == "${candidate_pod_name}"; then
                     candidate_pod_state=${resource_state}
-                    echo "DEBUG: New state for candidate pod ${candidate_pod_name} (${candidate_pod_state})."
-                
+                    debug "New state for candidate pod ${candidate_pod_name} (${candidate_pod_state})."
+
                 else
-                    echo "ERROR: Ignoring unhandled event."
+                    error "Ignoring unhandled event."
                 fi
             ;;
             MODIFIED)
                 if test "${resource_name}" == "${current_pod_name}"; then
                     current_pod_state=${resource_state}
-                    echo "DEBUG: New state for current pod ${current_pod_name} (${current_pod_state})."
+                    debug "New state for current pod ${current_pod_name} (${current_pod_state})."
 
                 elif test "${resource_name}" == "${candidate_pod_name}"; then
                     candidate_pod_state=${resource_state}
-                    echo "DEBUG: New state for candidate pod ${candidate_pod_name} (${candidate_pod_state})."
-                
+                    debug "New state for candidate pod ${candidate_pod_name} (${candidate_pod_state})."
+
                 else
-                    echo "ERROR: Ignoring unhandled event."
+                    error "Ignoring unhandled event."
                 fi
             ;;
             DELETED)
                 if test "${resource_name}" == "${current_pod_name}"; then
-                    echo "DEBUG: Processing deletion for current pod ${current_pod_name}."
+                    debug "Processing deletion for current pod ${current_pod_name}."
                     if test -n "${candidate_pod_name}"; then
                         current_pod_name=${candidate_pod_name}
                         current_pod_state=${candidate_pod_state}
-                        echo "DEBUG: Switching to candidate pod ${candidate_pod_name} (${candidate_pod_state})."
-                        followed_pod_updated "${CONTEXT}" "${NAMESPACE}" "${LABEL_SELECTOR}" "${current_pod_name}"
+                        info "Switching to candidate pod ${candidate_pod_name} (${candidate_pod_state})."
+                        followed_pod_updated "${LABEL_SELECTOR}" "${current_pod_name}"
 
                     else
-                        echo "DEBUG: No candidate evailable. Unable to switch."
+                        debug "No candidate evailable. Unable to switch."
                     fi
                 fi
             ;;
         esac
 
-        echo "DEBUG: Done with event."
+        debug "Done with event."
+
+        event_index=$((event_index + 1))
     done

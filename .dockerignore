@@ -4,5 +4,6 @@
 .env
 .gitignore
 Dockerfile
+helper.sh
 README.md
 traefik-dns.yaml
