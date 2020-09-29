@@ -1,19 +1,17 @@
-name: docker-build
+name: docker-build2
 
 on:
   push:
     branches:
     - master
     paths:
-    - "Dockerfile"
-    - "traefik-dns.sh"
-    - "!shell-operator/**"
+    - "shell-operator/**"
   schedule:
   - cron:  '0 7 * * *'
 
 jobs:
   build:
-    name: docker-build
+    name: docker-build2
     runs-on: ubuntu-latest
     steps:
 
@@ -35,14 +33,15 @@ jobs:
     - name: Build
       uses: docker/build-push-action@v2
       with:
-        cache-from: nicholasdille/traefik-dns:latest
+        context: shell-operator
+        cache-from: nicholasdille/traefik-dns:shell-operator
         #push: true
-        tags: nicholasdille/traefik-dns:latest
+        tags: nicholasdille/traefik-dns:shell-operator
 
     - name: Run Trivy vulnerability scanner
       uses: aquasecurity/trivy-action@master
       with:
-        image-ref: nicholasdille/traefik-dns:latest
+        image-ref: nicholasdille/traefik-dns:shell-operator
         format: 'table'
         exit-code: '1'
         ignore-unfixed: true
@@ -51,6 +50,7 @@ jobs:
     - name: Build and push
       uses: docker/build-push-action@v2
       with:
-        cache-from: nicholasdille/traefik-dns:latest
+        context: shell-operator
+        cache-from: nicholasdille/traefik-dns:shell-operator
         push: true
-        tags: nicholasdille/traefik-dns:latest
+        tags: nicholasdille/traefik-dns:shell-operator
