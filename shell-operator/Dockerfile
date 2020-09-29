@@ -1,3 +1,3 @@
 FROM flant/shell-operator:latest
-COPY hooks /hooks
+COPY pod.sh /hooks/
 RUN chmod +x /hooks/*.sh
