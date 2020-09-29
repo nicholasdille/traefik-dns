@@ -7,6 +7,7 @@ on:
     paths:
     - "Dockerfile"
     - "traefik-dns.sh"
+    - ".github/workflows/traefik-dns.yml"
     - "!shell-operator/**"
   schedule:
   - cron:  '0 7 * * *'
