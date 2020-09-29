@@ -35,6 +35,7 @@ jobs:
       uses: docker/build-push-action@v2
       with:
         context: shell-operator
+        file: ./shell-operator/Dockerfile
         cache-from: nicholasdille/traefik-dns:shell-operator
         push: true
         tags: nicholasdille/traefik-dns:shell-operator
