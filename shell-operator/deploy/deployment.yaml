@@ -1,0 +1,28 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: traefik-dns
+  namespace: traefik
+  labels:
+    app: traefik-dns
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: traefik-dns
+  template:
+    metadata:
+      labels:
+        app: traefik-dns
+    spec:
+      serviceAccountName: traefik-dns
+      containers:
+      - name: traefik-dns
+        image: nicholasdille/traefik-dns:shell-operator
+        imagePullPolicy: Always
+        env:
+        - name: NAMESPACE
+          value: traefik
+        - name: SELECTOR
+          value: "app: traefik"
